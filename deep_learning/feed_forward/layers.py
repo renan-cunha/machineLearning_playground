@@ -6,7 +6,7 @@ class LinearLayer:
 
     def __init__(self, shape: Tuple[int, int]):
         self.weights = np.random.randn(shape[0], shape[1])
-        self.biases = np.zeros((shape[1], 1))
+        self.biases = np.random.randn(shape[1], 1)
 
     def forward(self, x: np.ndarray):
         self.x = x

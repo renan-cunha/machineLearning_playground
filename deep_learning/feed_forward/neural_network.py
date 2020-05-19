@@ -4,22 +4,19 @@ from sklearn.metrics import mean_squared_error
 from abc import ABC, abstractmethod
 from typing import Tuple, List
 from layers import LinearLayer, SigmoidLayer, SqrErrorLayer
+import pandas as pd
 
 
 class NeuralNetwork:
 
     def __init__(self, num_neurons: List[int]):
-        self.learning_rate = 0.1
-        self.training_iters = 1
         self.layers = []
-        for index, neuron in enumerate(num_neurons[:-2]):
+        for index, neuron in enumerate(num_neurons[:-1]):
             print(neuron, num_neurons[index+1])
             layer = LinearLayer((neuron, num_neurons[index+1]))
             self.layers.append(layer)
             layer = SigmoidLayer()
             self.layers.append(layer)
-        layer = LinearLayer((num_neurons[-2], num_neurons[-1]))
-        self.layers.append(layer)
         self.loss_layer = None
     
     def backward_propagation(self, output: np.ndarray) -> None:
@@ -33,23 +30,38 @@ class NeuralNetwork:
             if type(layer) == LinearLayer:
                 self.layers[layer_index].weights -= learning_rate*layer.grad_weights
                 self.layers[layer_index].biases -= learning_rate*layer.grad_biases
-                
 
     def fit(self, x: np.ndarray, y: np.ndarray,
-            learning_rate: float, training_iters: int) -> np.array:
-        self.loss_layer = SqrErrorLayer(y)
-
-        losses = np.empty(self.training_iters)
+            learning_rate: float, training_iters: int,
+            batch_size: int) -> np.array:
+        num_examples = x.shape[0]
+        losses = np.empty(training_iters)
+        random_index = np.linspace(0, num_examples-1, num_examples).astype(int)
         for i in range(training_iters):
-
+            np.random.shuffle(random_index)
+            x = x[random_index]
+            y = y[random_index]
+            for index_batch in range(0, num_examples, batch_size):
+                mini_batch_x = x[index_batch: index_batch + batch_size]
+                mini_batch_y = y[index_batch: index_batch + batch_size]
+                self.loss_layer = SqrErrorLayer(mini_batch_y)
+                y_pred = self.predict(mini_batch_x)
+                self.loss_layer.forward(y_pred)
+                self.backward_propagation(y_pred)
+                self.update_params(learning_rate)
+                   
+            self.loss_layer = SqrErrorLayer(y)
             y_pred = self.predict(x)
+            y_pred_labels = np.argmax(y_pred, axis=1)
+            y_labels = np.argmax(y, axis=1)
+
+            accuracy = np.sum(y_labels == y_pred_labels) / num_examples
+
             error = self.loss_layer.forward(y_pred)
             mean_error = np.mean(error)
-            self.backward_propagation(y_pred)
-                   
+
             print(f"EPOCH {i}")
-            print(f"MSE Error: {mean_error}")
-            self.update_params(learning_rate)
+            print(f"MSE Error: {mean_error} | Accuracy: {accuracy}")
 
         return losses
 
@@ -58,10 +70,26 @@ class NeuralNetwork:
             x = layer.forward(x)
         return x
 
+
 if __name__ == "__main__":
-    model = NeuralNetwork([1, 10, 1])
-    x = np.random.randn(10).reshape(-1, 1)
-    y = 5 + 3*x + np.random.normal(0, 3)
-    print(x.shape)
-    print(y.shape)
-    model.fit(x, y, training_iters=1000, learning_rate=0.001)
+    csv = pd.read_csv("../mnist-in-csv/mnist_train.csv")
+    end_index = 60000
+    X = csv.values[:end_index, 1:].astype("float64")
+    X /= 255
+    y = csv.values[:end_index, 0]
+    y_one_hot = np.zeros((y.size, y.max()+1))
+    y_one_hot[np.arange(y.size), y] = 1
+    y_one_hot = y_one_hot.astype("float64")
+    
+    model = NeuralNetwork([784, 30, 10])
+    model.fit(X, y_one_hot, training_iters=30, learning_rate=0.3, batch_size=10)
+    csv = pd.read_csv("../mnist-in-csv/mnist_test.csv")
+    X = csv.values[:, 1:].astype("float64")
+    X /= 255
+    y = csv.values[:, 0]
+    y_one_hot = np.zeros((y.size, y.max()+1))
+    y_one_hot[np.arange(y.size), y] = 1
+    y_one_hot = y_one_hot.astype("float64")
+
+    print(np.sum(np.argmax(model.predict(X), axis=1) == y)/10000)
+
